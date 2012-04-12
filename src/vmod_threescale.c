@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <stddef.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -12,11 +13,18 @@
 #include "bin/varnishd/cache.h"
 #include "vcc_if.h"
 
+#define HTTP_GET 1
+#define HTTP_POST 2
+
+char *url_encode(char *str);
+
 struct request {
   char* host;
   char* path;
   char* header;
+	char* body;
   int port;
+	int http_verb;
 };
 
 
@@ -71,7 +79,10 @@ int get_http_response_code(char* buffer, int buffer_len) {
       first_space = 1;
     }
     else {
-      if ((buffer[i]==32) && (first_space==1)) i=buffer_len;
+      if ((buffer[i]==32) && (first_space==1)) {
+				respcode[conti]='\0';
+				i=buffer_len;
+			}
       else {
         if (first_space==1) {
           respcode[conti]=buffer[i];
@@ -84,9 +95,28 @@ int get_http_response_code(char* buffer, int buffer_len) {
   return atoi(respcode);
   
 }
-        
 
-char* send_get_request(struct request* req, int* http_response_code) {
+char* get_string_between_delimiters(const char* string, const char* left, const char* right) {
+	
+    const char* beginning = strstr(string, left);
+		if (beginning == NULL) return NULL;
+		
+    const char* end = strstr(string, right);
+		if(end == NULL) return NULL;
+		
+		beginning += strlen(left);
+    ptrdiff_t len = end - beginning;
+
+		if (len<=0) return NULL;
+    char* out = malloc(len + 1);
+    strncpy(out, beginning, len);
+
+    (out)[len] = 0;
+		return out;
+}
+
+
+char* send_request(struct request* req, int* http_response_code) {
 
   struct sockaddr_in *remote;
   int sock;
@@ -104,18 +134,38 @@ char* send_get_request(struct request* req, int* http_response_code) {
     char* template;
     char* srequest;
 
-    if ((req->header==NULL) || (strlen(req->header)==0)) {
-      template = "GET %s HTTP/1.1\r\nHost: %s\r\nConnection: Close\r\n\r\n";
-      srequest = (char*)malloc(sizeof(char)*((int)strlen(template)+(int)strlen(req->path)+(int)strlen(req->host)-3));
-      sprintf(srequest,template,req->path,req->host);
-
-    }
-    else {
-      template = "GET %s HTTP/1.1\r\nHost: %s\r\n%s\r\nConnection: Close\r\n\r\n";
-      srequest = (char*)malloc(sizeof(char)*((int)strlen(template)+(int)strlen(req->path)+(int)strlen(req->host)+(int)strlen(req->header)-5));
-      sprintf(srequest,template,req->path,req->host,req->header);
-    } 
-
+		if (req->http_verb==HTTP_POST) {
+			
+			int body_len = strlen(req->body);
+			char tmp[128];
+			sprintf(tmp,"%d",body_len); 
+			int body_len_len = strlen(tmp);
+			
+			if ((req->header==NULL) || (strlen(req->header)==0)) {
+      	template = "POST %s HTTP/1.1\r\nHost: %s\r\nContent-Type: application/x-www-form-urlencoded\r\nContent-Length: %d\r\nConnection: Close\r\n\r\n%s";
+      	srequest = (char*)malloc(sizeof(char)*((int)strlen(template)+(int)strlen(req->path)+(int)strlen(req->host)+body_len+body_len_len-7));
+      	sprintf(srequest,template,req->path,req->host,body_len,req->body);
+    	}
+    	else {
+      	template = "POST %s HTTP/1.1\r\nHost: %s\r\nContent-Type: application/x-www-form-urlencoded\r\nContent-Length: %d\r\n%s\r\nConnection: Close\r\n\r\n%s";
+      	srequest = (char*)malloc(sizeof(char)*((int)strlen(template)+(int)strlen(req->path)+(int)strlen(req->host)+(int)strlen(req->header)+body_len+body_len_len-9));
+      	sprintf(srequest,template,req->path,req->host,body_len,req->header,req->body);
+    	}
+			
+		}
+		else {
+    	if ((req->header==NULL) || (strlen(req->header)==0)) {
+      	template = "GET %s HTTP/1.1\r\nHost: %s\r\nConnection: Close\r\n\r\n";
+      	srequest = (char*)malloc(sizeof(char)*((int)strlen(template)+(int)strlen(req->path)+(int)strlen(req->host)-3));
+      	sprintf(srequest,template,req->path,req->host);
+    	}
+    	else {
+      	template = "GET %s HTTP/1.1\r\nHost: %s\r\n%s\r\nConnection: Close\r\n\r\n";
+      	srequest = (char*)malloc(sizeof(char)*((int)strlen(template)+(int)strlen(req->path)+(int)strlen(req->host)+(int)strlen(req->header)-5));
+      	sprintf(srequest,template,req->path,req->host,req->header);
+    	}
+		}
+		
     if((sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) >= 0) {
 
       remote = (struct sockaddr_in *)malloc(sizeof(struct sockaddr_in *));
@@ -131,7 +181,7 @@ char* send_get_request(struct request* req, int* http_response_code) {
           sent += tmpres;
         }
 
-        // FIXME: this will only work for long response pages > 16KB (buffer_size)
+        // FIXME: this will fail for long response pages > 16KB (buffer_size)
         recv(sock, buffer, buffer_size, 0);
 
         (*http_response_code) = get_http_response_code(buffer,buffer_size);
@@ -157,21 +207,77 @@ char* send_get_request(struct request* req, int* http_response_code) {
   
 }
 
-void* send_get_request_thread(void* data) {
+void* send_request_thread(void* data) {
 
   struct request *req = (struct request *)data; 
   int http_response_code;
 
-  char* buffer = send_get_request(req,&http_response_code);
+  char* buffer = send_request(req,&http_response_code);
 
   if (buffer!=NULL) free(buffer);
   if (req->host!=NULL) free(req->host);
   if (req->path!=NULL) free(req->path);
   if (req->header!=NULL) free(req->header);
+  if (req->body!=NULL) free(req->body);
   if (req!=NULL) free(req);
 
   pthread_exit(NULL);
 
+}
+
+// ****************************************************************************
+// credits for to_hex and url_encode: http://www.geekhideout.com/urlcode.shtml
+
+/* Converts an integer value to its hex character*/
+char to_hex(char code) {
+  static char hex[] = "0123456789abcdef";
+  return hex[code & 15];
+}
+
+/* Returns a url-encoded version of str */
+/* IMPORTANT: be sure to free() the returned string after use */
+char *url_encode(char *str) {
+  char *pstr = str, *buf = malloc(strlen(str) * 3 + 1), *pbuf = buf;
+  while (*pstr) {
+    if (isalnum(*pstr) || *pstr == '-' || *pstr == '_' || *pstr == '.' || *pstr == '~') 
+      *pbuf++ = *pstr;
+    else if (*pstr == ' ') 
+      *pbuf++ = '+';
+    else 
+      *pbuf++ = '%', *pbuf++ = to_hex(*pstr >> 4), *pbuf++ = to_hex(*pstr & 15);
+    pstr++;
+  }
+  *pbuf = '\0';
+  return buf;
+}
+
+
+// ****************************************************************************
+
+const char *vmod_url_encode(struct sess *sp, const char* string) {
+		return url_encode(string);
+}
+
+int vmod_response_http_code(struct sess *sp, const char* response_body) {
+
+	if (response_body==NULL) return -1;
+	int len = strlen(response_body);
+	if (len>0) {
+		return get_http_response_code(response_body,len);
+	}
+	else return -1;
+	
+}
+
+const char* vmod_response_key(struct sess *sp, const char* response_body) {
+	
+	if (response_body==NULL) return NULL;
+	int len = strlen(response_body);
+	if (len>0) {
+		return get_string_between_delimiters(response_body,"<key>","</key>");
+	}
+	else return NULL;
+	
 }
 
 
@@ -188,11 +294,10 @@ int vmod_send_get_request(struct sess *sp, const char* host, const char* port, c
   req->path = strdup(path);
   req->header = strdup(header);
   req->port = porti;
+	req->http_verb = HTTP_GET;
 
   int http_response_code;
-  char* http_body = send_get_request(req,&http_response_code);
-
-  //printf("%d %s\n",http_response_code,http_body);
+  char* http_body = send_request(req,&http_response_code);
  
   if (req->host!=NULL) free(req->host);
   if (req->path!=NULL) free(req->path);
@@ -201,6 +306,33 @@ int vmod_send_get_request(struct sess *sp, const char* host, const char* port, c
   if (http_body!=NULL) free(http_body);
 
   return http_response_code;
+
+}
+
+const char* vmod_send_get_request_body(struct sess *sp, const char* host, const char* port, const char* path, const char* header) {
+
+  int porti;
+  if (port!=NULL && strcmp(port,"(null)")!=0) { 
+    porti = atoi(port);
+    if (porti<=0) porti=80;
+  }
+
+  struct request *req = (struct request*)malloc(sizeof(struct request));  
+  req->host = strdup(host);
+  req->path = strdup(path);
+  req->header = strdup(header);
+  req->port = porti;
+	req->http_verb = HTTP_GET;
+
+  int http_response_code;
+  char* http_body = send_request(req, &http_response_code);
+
+  if (req->host!=NULL) free(req->host);
+  if (req->path!=NULL) free(req->path);
+  if (req->header!=NULL) free(req->header);
+  if (req!=NULL) free(req);
+
+  return http_body;
 
 }
 
@@ -220,19 +352,35 @@ int vmod_send_get_request_threaded(struct sess *sp, const char* host, const char
   req->path = strdup(path);
   if (header!=NULL) req->header = strdup(header);
   req->port = porti;
+	req->http_verb = HTTP_GET;
 
-  pthread_create(&tid, NULL, send_get_request_thread,(void *)req);
+  pthread_create(&tid, NULL, send_request_thread,(void *)req);
   pthread_detach(tid);
   
   return 0;
 }
 
-/*
-int main(int argc, char** argv) {
+int vmod_send_post_request_threaded(struct sess *sp, const char* host, const char* port, const char* path, const char* header, const char* body) {
 
-  vmod_send_get_request(NULL,"localhost","3001","/transactions/authrep.xml?provider_key=3scale-5fc9d398ac038e4e8f212cc1e8cf01d2&app_id=552740021&usage[hits]=1","X-bullshit: true;");
+  pthread_t tid;
+ 
+  int porti = 80;
+  if (port!=NULL && strcmp(port,"(null)")!=0) { 
+    porti = atoi(port);
+    if (porti<=0) porti=80;
+  }
 
-  vmod_send_get_request(NULL,"localhost","3001","/transactions/authrep.xml?provider_key=3scale-5fc9d398ac038e4e8f212cc1e8cf01d2&app_id=552740021&usage[hits]=1","");
+  struct request *req = (struct request*)malloc(sizeof(struct request));  
+  req->host = strdup(host);
+  req->path = strdup(path);
+	req->body = strdup(body);
+  if (header!=NULL) req->header = strdup(header);
+  req->port = porti;
+	req->http_verb = HTTP_POST;
 
+  pthread_create(&tid, NULL, send_request_thread,(void *)req);
+  pthread_detach(tid);
+  
+  return 0;
 }
-*/
+

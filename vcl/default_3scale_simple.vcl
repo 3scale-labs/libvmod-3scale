@@ -4,7 +4,7 @@
 # backend. 
 # 
 # set the beresp.ttl in vcl_fetch to have a default global TTL
-# you can define custom TTL via regular expresions
+# you can define custom TTL via regular expressions
 #
  
 
