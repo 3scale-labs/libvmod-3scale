@@ -6,7 +6,9 @@
 # set the beresp.ttl in vcl_fetch to have a default global TTL
 # you can define custom TTL via regular expressions
 #
- 
+# Integration mode: stand-alone out of band system.
+# Traffic from API consumers will not go through Varnish
+# (see https://support.3scale.net/howtos/api-configuration/varnish)
 
 backend default {
   .host = "su1.3scale.net";     

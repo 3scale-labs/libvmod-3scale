@@ -6,6 +6,12 @@
 # set the beresp.ttl in vcl_fetch to have a default global TTL
 # you can define custom TTL via regular expressions
 #
+# Integration mode: API proxy.
+# Traffic from API consumers will go through Varnish 
+# Varnish will check with 3scale backend for API call authorization and reporting
+# (see https://support.3scale.net/howtos/api-configuration/varnish)
+
+# Replace placeholders at lines 18, 19 and 42.
 
 ## the backend of your API
 backend backend_api {
