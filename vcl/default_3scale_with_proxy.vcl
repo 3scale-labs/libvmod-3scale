@@ -74,7 +74,7 @@ sub vcl_recv {
     ## now the additional paramters, for instance if you want to pass the url path 
     set req.http.X-3scale-authrep = req.http.X-3scale-authrep + "&object=" + req.url;
 
-    set req.http.X-3scale-authrep-result = threescale.send_get_request("localhost","80",req.http.X-3scale-authrep,"X-3scale-authorization: true;");
+    set req.http.X-3scale-authrep-result = threescale.send_get_request("su1.3scale.net","80",req.http.X-3scale-authrep,"X-3scale-authorization: true;");
 
     if (req.http.X-3scale-authrep-result == "200") {
       ## the request from the user has been authorized, proceed as normal
