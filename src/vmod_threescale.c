@@ -142,8 +142,10 @@ int send_request(struct request* req, int* http_response_code, char * buffer) {
   if (proxy = getenv("http_proxy") != NULL){
     char* host = req->host;
     char* path = req->path;
-    req->host = proxy;
+    get_string_between_delimiters(proxy,"http://",":", req->host);
     sprintf(req->path,"https://%s%s", host, path);
+    free(host);
+    free(path);
   }
   
   if (ip==NULL) {
