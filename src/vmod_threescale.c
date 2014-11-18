@@ -135,6 +135,7 @@ int send_request(struct request* req, int* http_response_code, char * buffer) {
 
   struct sockaddr_in *remote;
   int sock;
+  char* proxy;
   int buffer_size = TAILLE;
   int tmpres;
 
@@ -142,6 +143,23 @@ int send_request(struct request* req, int* http_response_code, char * buffer) {
   memset( (char*) ip, 0, 16);
   
   get_ip(req->host, (char*) ip);
+
+  // check if there is a proxy, if so, replace host and path values in request.
+  if (proxy = getenv("http_proxy") != NULL){
+    char* oldhost = req->host;
+    char* oldpath = req->path;
+
+    int pathlen = 9 + strlen(oldhost) + strlen(oldpath);
+    req->path = (char*)malloc(pathlen*sizeof(char));
+    
+
+    get_string_between_delimiters(proxy,"http://",":", req->host);
+    req->host = (char*)malloc(strlen(proxy)*sizeof(char));
+    
+    snprintf(req->path,"http://%s%s", oldhost, oldpath);
+    free(oldhost);
+    free(oldpath);
+  }
   
   if (ip==NULL) {
     perror("libvmod_3scale: could not resolve the ip");
