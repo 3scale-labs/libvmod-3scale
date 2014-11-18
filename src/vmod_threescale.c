@@ -106,24 +106,30 @@ int get_http_response_code(const char* buffer, int buffer_len) {
   
 }
 
-char* get_string_between_delimiters(const char* string, const char* left, const char* right, char * out) {
-  const char* beginning = strstr(string, left);
-  if (beginning == NULL) return NULL;
-		
-  const char* end = strstr(string, right);
-  if(end == NULL) return NULL;
-		
+static char *get_string_between_delimiters(const char *string, const char *left, const char* right, char *out) {
+  const char *beginning, *end;
+  ptrdiff_t len;
+
+  /* look for the left delimiter */
+  beginning = strstr(string, left);
+  if (beginning == NULL)
+    return NULL;
+
+  /* advance until the end of the left delimiter */
   beginning += strlen(left);
-  ptrdiff_t len = end - beginning;
 
-  if (len<=0) return NULL;
+  /* look for the second delimiter */
+  end = strstr(beginning, right);
+  if (end == NULL)
+    return NULL;
 
-  strncpy(out, beginning, len);
+  len = end - beginning;
+  strncpy(out, beginning, (size_t) len);
 
-  (out)[len] = 0;
+  out[len] = '\0';
+
   return out;
 }
-
 
 int send_request(struct request* req, int* http_response_code, char * buffer) {
 
