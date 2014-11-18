@@ -145,9 +145,11 @@ int send_request(struct request* req, int* http_response_code, char * buffer) {
 
     int pathlen = 9 + strlen(oldhost) + strlen(oldpath);
     req->path = (char*)malloc(pathlen*sizeof(char));
-    req->host = (char*)malloc(strlen(oldhost)*sizeof(char));
+    
 
     get_string_between_delimiters(proxy,"http://",":", req->host);
+    req->host = (char*)malloc(strlen(proxy)*sizeof(char));
+    
     snprintf(req->path,"http://%s%s", oldhost, oldpath);
     free(oldhost);
     free(oldpath);
