@@ -138,9 +138,9 @@ sub vcl_hash {
     ## cache this is the place.
 
     set req.http.X-url-tmp = regsub(req.url,"[&?]user_key.[^&]*","");
-    set req.http.X-url-tmp = regsub(req.url,"[&?]user_id.[^&]*","");
-    set req.http.X-url-tmp = regsub(req.url,"[&?]app_key.[^&]*","");
-    set req.http.X-url-tmp = regsub(req.url,"[&?]app_id.[^&]*","");
+    set req.http.X-url-tmp = regsub(req.http.X-url-tmp,"[&?]user_id.[^&]*","");
+    set req.http.X-url-tmp = regsub(req.http.X-url-tmp,"[&?]app_key.[^&]*","");
+    set req.http.X-url-tmp = regsub(req.http.X-url-tmp,"[&?]app_id.[^&]*","");
 
     hash_data(req.http.X-url-tmp);
 
